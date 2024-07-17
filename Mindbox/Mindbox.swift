@@ -176,7 +176,7 @@ public class Mindbox: NSObject {
             }
             
             guard persistenceAPNSToken != token else {
-                Logger.common(message: "persistenceAPNSToken not equal to deviceToken. persistenceAPNSToken: \(persistenceAPNSToken)", level: .error, category: .notification)
+                Logger.common(message: "persistenceAPNSToken is equal to deviceToken. persistenceAPNSToken: \(persistenceAPNSToken)", level: .error, category: .notification)
                 return
             }
             coreController?.apnsTokenDidUpdate(token: token)
@@ -562,7 +562,6 @@ public class Mindbox: NSObject {
         notificationStatusProvider = container.authorizationStatusProvider
         databaseRepository = container.databaseRepository
         inAppMessagesManager = container.inAppMessagesManager
-        sessionTemporaryStorage = container.sessionTemporaryStorage
         inAppMessagesDelegate = self
         inappMessageEventSender = container.inappMessageEventSender
         pushValidator = container.pushValidator
@@ -576,7 +575,8 @@ public class Mindbox: NSObject {
             trackVisitManager: container.instanceFactory.makeTrackVisitManager(),
             sessionManager: container.sessionManager,
             inAppMessagesManager: container.inAppMessagesManager,
-            uuidDebugService: container.uuidDebugService
+            uuidDebugService: container.uuidDebugService,
+            userVisitManager: container.userVisitManager
         )
     }
 
@@ -585,7 +585,7 @@ public class Mindbox: NSObject {
     }
 
     @objc private func resetShownInApps() {
-        persistenceStorage?.shownInAppsIds = nil
+        persistenceStorage?.shownInappsDictionary = [:]
     }
     
     @objc private func eraseSessionStorage() {

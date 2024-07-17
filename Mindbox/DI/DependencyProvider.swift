@@ -22,7 +22,6 @@ final class DependencyProvider: DependencyContainer {
     let inAppTargetingChecker: InAppTargetingChecker
     let inAppMessagesManager: InAppCoreManagerProtocol
     let uuidDebugService: UUIDDebugService
-    var sessionTemporaryStorage: SessionTemporaryStorage
     var inappMessageEventSender: InappMessageEventSender
     let sdkVersionValidator: SDKVersionValidator
     let geoService: GeoServiceProtocol
@@ -32,11 +31,16 @@ final class DependencyProvider: DependencyContainer {
     var urlExtractorService: VariantImageUrlExtractorService
     var inappFilterService: InappFilterProtocol
     var pushValidator: MindboxPushValidator
+    var inAppConfigurationDataFacade: InAppConfigurationDataFacadeProtocol
+    var userVisitManager: UserVisitManagerProtocol
+    var ttlValidationService: TTLValidationProtocol
+    var frequencyValidator: InappFrequencyValidator
 
     init() throws {
         utilitiesFetcher = MBUtilitiesFetcher()
-        inAppTargetingChecker = InAppTargetingChecker()
         persistenceStorage = MBPersistenceStorage(defaults: UserDefaults(suiteName: utilitiesFetcher.applicationGroupIdentifier)!)
+        persistenceStorage.migrateShownInAppsIds()
+        inAppTargetingChecker = InAppTargetingChecker(persistenceStorage: persistenceStorage)
         databaseLoader = try DataBaseLoader(applicationGroupIdentifier: utilitiesFetcher.applicationGroupIdentifier)
         let persistentContainer = try databaseLoader.loadPersistentContainer()
         databaseRepository = try MBDatabaseRepository(persistentContainer: persistentContainer)
@@ -51,23 +55,21 @@ final class DependencyProvider: DependencyContainer {
             eventRepository: instanceFactory.makeEventRepository()
         )
         authorizationStatusProvider = UNAuthorizationStatusProvider()
-        sessionManager = SessionManager(trackVisitManager: instanceFactory.makeTrackVisitManager())
+        sessionManager = MBSessionManager(trackVisitManager: instanceFactory.makeTrackVisitManager())
         let logsManager = SDKLogsManager(persistenceStorage: persistenceStorage, eventRepository: instanceFactory.makeEventRepository())
-        sessionTemporaryStorage = SessionTemporaryStorage()
+
         sdkVersionValidator = SDKVersionValidator(sdkVersionNumeric: Constants.Versions.sdkVersionNumeric)
         geoService = GeoService(fetcher: instanceFactory.makeNetworkFetcher(),
-                                sessionTemporaryStorage: sessionTemporaryStorage,
                                 targetingChecker: inAppTargetingChecker)
         segmentationSevice = SegmentationService(customerSegmentsAPI: .live,
-                                                 sessionTemporaryStorage: sessionTemporaryStorage,
                                                  targetingChecker: inAppTargetingChecker)
         let imageDownloader = URLSessionImageDownloader(persistenceStorage: persistenceStorage)
         imageDownloadService = ImageDownloadService(imageDownloader: imageDownloader)
         abTestDeviceMixer = ABTestDeviceMixer()
         let tracker = InAppMessagesTracker(databaseRepository: databaseRepository)
         let displayUseCase = PresentationDisplayUseCase(tracker: tracker)
-        let actionUseCase = PresentationActionUseCase(tracker: tracker)
-        let actionHandler = InAppActionHandler(actionUseCase: actionUseCase)
+        let actionUseCaseFactory = ActionUseCaseFactory(tracker: tracker)
+        let actionHandler = InAppActionHandler(actionUseCaseFactory: actionUseCaseFactory)
         let presentationManager = InAppPresentationManager(actionHandler: actionHandler,
                                                            displayUseCase: displayUseCase)
         urlExtractorService = VariantImageUrlExtractorService()
@@ -79,32 +81,40 @@ final class DependencyProvider: DependencyContainer {
         let positionFilter = ElementsPositionFilterService()
         let elementsFilterService = ElementsFilterService(sizeFilter: sizeFilter, positionFilter: positionFilter, colorFilter: colorFilter)
         let contentPositionFilterService = ContentPositionFilterService()
+
         let variantsFilterService = VariantFilterService(layersFilter: layersFilterService,
                                                          elementsFilter: elementsFilterService,
                                                          contentPositionFilter: contentPositionFilterService)
-        inappFilterService = InappsFilterService(variantsFilter: variantsFilterService)
+
+        frequencyValidator = InappFrequencyValidator(persistenceStorage: persistenceStorage)
+        inappFilterService = InappsFilterService(persistenceStorage: persistenceStorage,
+                                                 abTestDeviceMixer: abTestDeviceMixer,
+                                                 variantsFilter: variantsFilterService,
+                                                 sdkVersionValidator: sdkVersionValidator, 
+                                                 frequencyValidator: frequencyValidator)
+        
+        ttlValidationService = TTLValidationService(persistenceStorage: persistenceStorage)
+        inAppConfigurationDataFacade = InAppConfigurationDataFacade(geoService: geoService,
+                                                                    segmentationService: segmentationSevice,
+                                                                    targetingChecker: inAppTargetingChecker,
+                                                                    imageService: imageDownloadService, 
+                                                                    tracker: tracker)
+        
         inAppMessagesManager = InAppCoreManager(
             configManager: InAppConfigurationManager(
                 inAppConfigAPI: InAppConfigurationAPI(persistenceStorage: persistenceStorage),
                 inAppConfigRepository: InAppConfigurationRepository(),
                 inAppConfigurationMapper: InAppConfigutationMapper(inappFilterService: inappFilterService,
-                                                                   geoService: geoService,
-                                                                   segmentationService: segmentationSevice,
-                                                                   customerSegmentsAPI: .live,
                                                                    targetingChecker: inAppTargetingChecker,
-                                                                   sessionTemporaryStorage: sessionTemporaryStorage,
-                                                                   persistenceStorage: persistenceStorage,
-                                                                   sdkVersionValidator: sdkVersionValidator,
-                                                                   imageDownloadService: imageDownloadService,
                                                                    urlExtractorService: urlExtractorService,
-                                                                   abTestDeviceMixer: abTestDeviceMixer),
-                logsManager: logsManager, sessionStorage: sessionTemporaryStorage),
-            presentationManager: presentationManager,
+                                                                   dataFacade: inAppConfigurationDataFacade),
+                logsManager: logsManager,
             persistenceStorage: persistenceStorage,
-            sessionStorage: sessionTemporaryStorage
+            ttlValidationService: ttlValidationService),
+            presentationManager: presentationManager,
+            persistenceStorage: persistenceStorage
         )
-        inappMessageEventSender = InappMessageEventSender(inAppMessagesManager: inAppMessagesManager,
-                                                          sessionStorage: sessionTemporaryStorage)
+        inappMessageEventSender = InappMessageEventSender(inAppMessagesManager: inAppMessagesManager)
 
         uuidDebugService = PasteboardUUIDDebugService(
             notificationCenter: NotificationCenter.default,
@@ -113,6 +123,7 @@ final class DependencyProvider: DependencyContainer {
         )
         
         pushValidator = MindboxPushValidator()
+        userVisitManager = UserVisitManager(persistenceStorage: persistenceStorage)
     }
 }
 

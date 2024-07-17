@@ -20,7 +20,6 @@ protocol DependencyContainer {
     var inAppTargetingChecker: InAppTargetingChecker { get }
     var inAppMessagesManager: InAppCoreManagerProtocol { get }
     var uuidDebugService: UUIDDebugService { get }
-    var sessionTemporaryStorage: SessionTemporaryStorage { get }
     var inappMessageEventSender: InappMessageEventSender { get }
     var sdkVersionValidator: SDKVersionValidator { get }
     var geoService: GeoServiceProtocol { get }
@@ -30,6 +29,10 @@ protocol DependencyContainer {
     var urlExtractorService: VariantImageUrlExtractorService { get }
     var inappFilterService: InappFilterProtocol { get }
     var pushValidator: MindboxPushValidator { get }
+    var inAppConfigurationDataFacade: InAppConfigurationDataFacadeProtocol { get }
+    var userVisitManager: UserVisitManagerProtocol { get }
+    var ttlValidationService: TTLValidationProtocol { get }
+    var frequencyValidator: InappFrequencyValidator { get }
 }
 
 protocol InstanceFactory {

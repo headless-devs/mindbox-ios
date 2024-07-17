@@ -11,28 +11,25 @@ import CoreData
 import XCTest
 
 class GuaranteedDeliveryTestCase: XCTestCase {
-
-    var databaseRepository: MBDatabaseRepository {
-        container.databaseRepository
-    }
-
+    
+    var container: TestDependencyProvider!
+    var databaseRepository: MBDatabaseRepository!
     var guaranteedDeliveryManager: GuaranteedDeliveryManager!
-
-    var persistenceStorage: PersistenceStorage {
-        container.persistenceStorage
-    }
-
-    let eventGenerator = EventGenerator()
-
-    var isDelivering: Bool {
-        guaranteedDeliveryManager.state.isDelivering
-    }
-
-    var container = try! TestDependencyProvider()
+    var persistenceStorage: PersistenceStorage!
+    var eventGenerator: EventGenerator!
+    var isDelivering: Bool!
 
     override func setUp() {
+        super.setUp()
         Mindbox.logger.logLevel = .none
+        
+        container = try! TestDependencyProvider()
+        databaseRepository = container.databaseRepository
         guaranteedDeliveryManager = container.guaranteedDeliveryManager
+        persistenceStorage = container.persistenceStorage
+        eventGenerator = EventGenerator()
+        isDelivering = guaranteedDeliveryManager.state.isDelivering
+        
         let configuration = try! MBConfiguration(plistName: "TestEventConfig")
         persistenceStorage.configuration = configuration
         persistenceStorage.configuration?.previousDeviceUUID = configuration.previousDeviceUUID
@@ -40,6 +37,17 @@ class GuaranteedDeliveryTestCase: XCTestCase {
         try! databaseRepository.erase()
         updateInstanceFactory(withFailureNetworkFetcher: false)
         // Put setup code here. This method is called before the invocation of each test method in the class.
+    }
+    
+    override func tearDown() {
+        
+        container = nil
+        databaseRepository = nil
+        guaranteedDeliveryManager = nil
+        persistenceStorage = nil
+        eventGenerator = nil
+        isDelivering = nil
+        super.tearDown()
     }
 
     private func updateInstanceFactory(withFailureNetworkFetcher: Bool) {
@@ -70,14 +78,31 @@ class GuaranteedDeliveryTestCase: XCTestCase {
     var state: NSString {
         NSString(string: guaranteedDeliveryManager.state.rawValue)
     }
+    
+    func testEventEqualsMockEvent() {
+        let type: Event.Operation = .installed
+        let body = UUID().uuidString
+        
+        let event: EventProtocol = Event(type: type, body: body)
+        let mockEvent: EventProtocol = MockEvent(type: type, body: body)
+        
+        XCTAssertEqual(!event.transactionId.isEmpty, !mockEvent.transactionId.isEmpty, "Transaction Ids should not be empty")
+        XCTAssertEqual(event.enqueueTimeStamp, mockEvent.enqueueTimeStamp, accuracy: 0.001, "Enqueue timestamps should match with some accuracy")
+        
+        XCTAssertEqual(event.serialNumber, mockEvent.serialNumber, "Serial numbers should be equal")
+        XCTAssertEqual(event.body, mockEvent.body, "Bodies should be equal")
+        XCTAssertEqual(event.type, mockEvent.type, "Types should be equal")
+        XCTAssertEqual(event.isRetry, mockEvent.isRetry, "Flags `isRetry` should be equal")
+        XCTAssertEqual(event.dateTimeOffset, mockEvent.dateTimeOffset, "Date time offsets should be equal")
+    }
 
     func testDateTimeOffset() {
-        let events = eventGenerator.generateEvents(count: 100)
+        let events = eventGenerator.generateMockEvents(count: 100)
         events.forEach { event in
             let enqueueDate = Date(timeIntervalSince1970: event.enqueueTimeStamp)
             let expectation = Int64((Date().timeIntervalSince(enqueueDate) * 1000).rounded())
             let dateTimeOffset = event.dateTimeOffset
-            XCTAssertTrue(expectation == dateTimeOffset)
+            XCTAssertEqual(dateTimeOffset, expectation, "dateTimeOffset should be equal")
         }
     }
 
@@ -120,7 +145,7 @@ class GuaranteedDeliveryTestCase: XCTestCase {
         }
         // Start update
         guaranteedDeliveryManager.canScheduleOperations = true
-        waitForExpectations(timeout: (retryDeadline + 1) * 2) { _ in
+        waitForExpectations(timeout: 15) { _ in
             observationToken?.invalidate()
             observationToken = nil
         }
@@ -170,18 +195,9 @@ class GuaranteedDeliveryTestCase: XCTestCase {
         }
         // Start update
         guaranteedDeliveryManager.canScheduleOperations = true
-        waitForExpectations(timeout: (retryDeadline + 5) * 2) { _ in
+        waitForExpectations(timeout: 15) { _ in
             observationToken?.invalidate()
             observationToken = nil
-        }
-    }
-
-    private func generateAndSaveToDatabaseEvents() {
-        let event = eventGenerator.generateEvent()
-        do {
-            try databaseRepository.create(event: event)
-        } catch {
-            XCTFail(error.localizedDescription)
         }
     }
 }

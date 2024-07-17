@@ -11,7 +11,6 @@ import XCTest
 @testable import Mindbox
 
 final class TestDependencyProvider: DependencyContainer {
-
     var inAppTargetingChecker: InAppTargetingChecker
     let inAppMessagesManager: InAppCoreManagerProtocol
     let utilitiesFetcher: UtilitiesFetcher
@@ -23,7 +22,6 @@ final class TestDependencyProvider: DependencyContainer {
     let sessionManager: SessionManager
     let instanceFactory: InstanceFactory
     let uuidDebugService: UUIDDebugService
-    let sessionTemporaryStorage: SessionTemporaryStorage
     var inappMessageEventSender: InappMessageEventSender
     let sdkVersionValidator: SDKVersionValidator
     var geoService: GeoServiceProtocol
@@ -33,13 +31,16 @@ final class TestDependencyProvider: DependencyContainer {
     var urlExtractorService: VariantImageUrlExtractorService
     var inappFilterService: InappFilterProtocol
     var pushValidator: MindboxPushValidator
+    var inAppConfigurationDataFacade: InAppConfigurationDataFacadeProtocol
+    var userVisitManager: UserVisitManagerProtocol
+    var ttlValidationService: TTLValidationProtocol
+    var frequencyValidator: InappFrequencyValidator
     
     init() throws {
-        sessionTemporaryStorage = SessionTemporaryStorage()
         utilitiesFetcher = MBUtilitiesFetcher()
         persistenceStorage = MockPersistenceStorage()
         databaseLoader = try DataBaseLoader()
-        inAppTargetingChecker = InAppTargetingChecker()
+        frequencyValidator = InappFrequencyValidator(persistenceStorage: persistenceStorage)
         let persistentContainer = try databaseLoader.loadPersistentContainer()
         databaseRepository = try MockDatabaseRepository(persistentContainer: persistentContainer)
         instanceFactory = MockInstanceFactory(
@@ -53,22 +54,27 @@ final class TestDependencyProvider: DependencyContainer {
             eventRepository: instanceFactory.makeEventRepository()
         )
         authorizationStatusProvider = MockUNAuthorizationStatusProvider(status: .authorized)
-        sessionManager = SessionManager(trackVisitManager: instanceFactory.makeTrackVisitManager())
-        inAppTargetingChecker = InAppTargetingChecker()
+        sessionManager = MockSessionManager()
+        inAppTargetingChecker = InAppTargetingChecker(persistenceStorage: persistenceStorage)
         inAppMessagesManager = InAppCoreManagerMock()
         uuidDebugService = MockUUIDDebugService()
-        inappMessageEventSender = InappMessageEventSender(inAppMessagesManager: inAppMessagesManager,
-                                                          sessionStorage: sessionTemporaryStorage)
-        sdkVersionValidator = SDKVersionValidator(sdkVersionNumeric: 1)
+        inappMessageEventSender = InappMessageEventSender(inAppMessagesManager: inAppMessagesManager)
+        sdkVersionValidator = SDKVersionValidator(sdkVersionNumeric: 8)
         geoService = GeoService(fetcher: instanceFactory.makeNetworkFetcher(),
-                                sessionTemporaryStorage: sessionTemporaryStorage,
                                 targetingChecker: inAppTargetingChecker)
         segmentationSevice = SegmentationService(customerSegmentsAPI: .live,
-                                                 sessionTemporaryStorage: sessionTemporaryStorage,
                                                  targetingChecker: inAppTargetingChecker)
         imageDownloadService = MockImageDownloadService()
         abTestDeviceMixer = ABTestDeviceMixer()
         urlExtractorService = VariantImageUrlExtractorService()
+        ttlValidationService = TTLValidationService(persistenceStorage: persistenceStorage)
+        let tracker = InAppMessagesTracker(databaseRepository: databaseRepository)
+        inAppConfigurationDataFacade = InAppConfigurationDataFacade(geoService: geoService,
+                                                                    segmentationService: segmentationSevice,
+                                                                    targetingChecker: inAppTargetingChecker,
+                                                                    imageService: imageDownloadService,
+                                                                    tracker: tracker)
+
         let actionFilter = LayerActionFilterService()
         let sourceFilter = LayersSourceFilterService()
         let layersFilterService = LayersFilterService(actionFilter: actionFilter, sourceFilter: sourceFilter)
@@ -80,8 +86,13 @@ final class TestDependencyProvider: DependencyContainer {
         let variantsFilterService = VariantFilterService(layersFilter: layersFilterService,
                                                          elementsFilter: elementsFilterService,
                                                          contentPositionFilter: contentPositionFilterService)
-        inappFilterService = InappsFilterService(variantsFilter: variantsFilterService)
+        inappFilterService = InappsFilterService(persistenceStorage: persistenceStorage,
+                                                 abTestDeviceMixer: abTestDeviceMixer,
+                                                 variantsFilter: variantsFilterService,
+                                                 sdkVersionValidator: sdkVersionValidator, 
+                                                 frequencyValidator: frequencyValidator)
         pushValidator = MindboxPushValidator()
+        userVisitManager = UserVisitManager(persistenceStorage: persistenceStorage)
     }
 }
 

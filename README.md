@@ -37,7 +37,7 @@ Mindbox SDK aids in handling push notifications. Configuration and usage instruc
 
 ## Troubleshooting
 
-An [Example of integration](https://github.com/mindbox-cloud/ios-sdk/tree/example) is provided in case of any issues.
+An [Example of integration](https://github.com/mindbox-cloud/ios-sdk/tree/develop/Example) is provided in case of any issues.
 
 ## Further Help
 
@@ -45,6 +45,6 @@ In need of further assistance? Feel free to contact us.
 
 ## License
 
-This library is available as open source under the explicit terms of the [License](https://github.com/mindbox-cloud/ios-sdk/blob/develop/LICENSE).
+This library is available as open source under the explicit terms of the [License](https://github.com/mindbox-cloud/ios-sdk/blob/develop/LICENSE.md).
 
 For a better understanding of these content, we suggest reading the referenced [iOS SDK](https://developers.mindbox.ru/docs/ios-sdk-integration) documentation.

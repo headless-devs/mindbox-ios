@@ -33,20 +33,23 @@ class InAppConfigurationManager: InAppConfigurationManagerProtocol {
     private let inAppConfigurationMapper: InAppConfigutationMapper
     private let inAppConfigAPI: InAppConfigurationAPI
     private let logsManager: SDKLogsManagerProtocol
-    private let sessionStorage: SessionTemporaryStorage
+    private let persistenceStorage: PersistenceStorage
+    private let ttlValidationService: TTLValidationProtocol
 
     init(
         inAppConfigAPI: InAppConfigurationAPI,
         inAppConfigRepository: InAppConfigurationRepository,
         inAppConfigurationMapper: InAppConfigutationMapper,
         logsManager: SDKLogsManagerProtocol,
-        sessionStorage: SessionTemporaryStorage
+        persistenceStorage: PersistenceStorage,
+        ttlValidationService: TTLValidationProtocol
     ) {
         self.inAppConfigRepository = inAppConfigRepository
         self.inAppConfigurationMapper = inAppConfigurationMapper
         self.inAppConfigAPI = inAppConfigAPI
         self.logsManager = logsManager
-        self.sessionStorage = sessionStorage
+        self.persistenceStorage = persistenceStorage
+        self.ttlValidationService = ttlValidationService
     }
 
     weak var delegate: InAppConfigurationDelegate?
@@ -112,9 +115,16 @@ class InAppConfigurationManager: InAppConfigurationManagerProtocol {
     }
 
     private func applyConfigFromCache() {
-        guard let cachedConfig = self.fetchConfigFromCache() else {
+        guard var cachedConfig = self.fetchConfigFromCache() else {
+            Logger.common(message: "Failed to apply configuration from cache: No cached configuration found.")
             return
         }
+        
+        if ttlValidationService.needResetInapps(config: cachedConfig) {
+            cachedConfig.inapps = nil
+            Logger.common(message: "[TTL] Resetting in-app due to the expiration of the current configuration.")
+        }
+        
         setConfigPrepared(cachedConfig)
     }
 
@@ -132,6 +142,9 @@ class InAppConfigurationManager: InAppConfigurationManagerProtocol {
     }
 
     private func saveConfigToCache(_ data: Data) {
+        let now = Date()
+        persistenceStorage.configDownloadDate = now
+        Logger.common(message: "[TTL] Config download date successfully updated to: \(now.asDateTimeWithSeconds).")
         inAppConfigRepository.saveConfigToCache(data)
     }
     
@@ -141,6 +154,9 @@ class InAppConfigurationManager: InAppConfigurationManagerProtocol {
             self.inapp = inapp
             Logger.common(message: "In-app applied: \(String(describing: inapp?.inAppId)))", level: .debug, category: .inAppMessages)
             self.delegate?.didPreparedConfiguration()
+            DispatchQueue.global(qos: .utility).async {
+                self.inAppConfigurationMapper.sendRemainingInappsTargeting()
+            }
         })
     }
     
@@ -150,11 +166,11 @@ class InAppConfigurationManager: InAppConfigurationManagerProtocol {
         }
         
         if let viewCategory = settings.operations?.viewCategory {
-            sessionStorage.operationsFromSettings.insert(viewCategory.systemName.lowercased())
+            SessionTemporaryStorage.shared.operationsFromSettings.insert(viewCategory.systemName.lowercased())
         }
 
         if let viewProduct = settings.operations?.viewProduct {
-            sessionStorage.operationsFromSettings.insert(viewProduct.systemName.lowercased())
+            SessionTemporaryStorage.shared.operationsFromSettings.insert(viewProduct.systemName.lowercased())
         }
     }
 }
